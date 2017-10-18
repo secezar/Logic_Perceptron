@@ -5,6 +5,7 @@ from datetime import datetime
 from os import path
 from random import random, shuffle, uniform
 
+import numpy
 from matplotlib import pyplot as plt
 
 from settings import PROJECT_ROOT
@@ -40,7 +41,7 @@ class LogicData:
             }
         }
         self.data = data_generations[activation][logical_fun]
-        print("Generated samples: \n {}".format(self.data))
+        # print("Generated samples: \n {}".format(self.data))
 
     def _generate_scheme_samples(self, n_samples, offset, data_schemes):
         return [[self._sample(inputs=scheme[0], offset=offset), scheme[1]]
@@ -59,7 +60,7 @@ class LogicData:
 
 
 class Perceptron:
-    def __init__(self, data=None, activation='unipolar', loss='discreet', weights_range=(-1, 1)):
+    def __init__(self, data=None, activation='unipolar', loss='discreet', weights_range=(-0.2, 0.2)):
         self.inputs, self.labels = self.initialize_data(data)
         self.weights, self.bias = self.initialize_weights(weights_range=weights_range,
                                                           input_len=len(self.inputs[0]))
@@ -68,11 +69,14 @@ class Perceptron:
         self.activation = self.set_activation(activation)
         print("Used {} activation function.".format(activation))
         self.loss = self.set_loss(loss)
+        print("Used {} loss function.".format(loss))
 
-    def initialize_data(self, data):
+    @staticmethod
+    def initialize_data(data):
         return list(zip(*data))
 
-    def initialize_weights(self, weights_range=(-1, 1), input_len=0):
+    @staticmethod
+    def initialize_weights(weights_range=(-1, 1), input_len=0):
         return [uniform(*weights_range) for _ in range(input_len)], random()
 
     def set_activation(self, activation):
@@ -90,7 +94,7 @@ class Perceptron:
         }
         return functions[loss]
 
-    def train(self, epochs, learning_rate, learning_loss_threshold=5, shuffle_data=True, inputs=None, labels=None):
+    def train(self, epochs=50, learning_rate=0.01, learning_loss_threshold=0.5, shuffle_data=True, inputs=None, labels=None):
         if not inputs or not labels:
             print("Train inputs was not given fully. Used perceptron initial inputs.")
             inputs, labels = self.inputs, self.labels
@@ -101,12 +105,9 @@ class Perceptron:
             if shuffle_data:
                 shuffle(labeled_data)
             epoch_loss = 0
-            print("Training set size: {}".format(len(labeled_data)))
             for sample, label in labeled_data:
                 epoch_loss += self._optimize_weights(sample, label, learning_rate)
-            print(epoch_loss)
-            print("Epoch {} loss: {} \n\t Bias: {} | Weights: {}".format(epoch, epoch_loss, self.bias,
-                                                                         self.weights))
+            print("Epoch {} loss: {} \n\t Bias: {} | Weights: {}".format(epoch, epoch_loss, self.bias, self.weights))
             epoch += 1
 
     def _optimize_weights(self, sample, label, learning_rate):
@@ -118,9 +119,7 @@ class Perceptron:
         return error
 
     def error(self, sample, label):
-        predicted = self.predict(sample)
-        error = self.loss(predicted if self.loss == self.discreet_loss else sample, label)
-        print("Predicted: {} | Label: {} | Error: {} | Sample: {}".format(predicted, label, error, sample))
+        error = self.loss(sample, label)
         return error
 
     def predict(self, sample):
@@ -133,31 +132,28 @@ class Perceptron:
         return 1 if self._calculate_activation(sample) > 0 else -1
 
     def _calculate_activation(self, sample):
-        return self.propagate_sample(sample) + self.bias
+        return sum(sample[i] * self.weights[i] for i in range(len(sample))) + self.bias
 
-    def propagate_sample(self, sample):
-        return sum(sample[i] * self.weights[i] for i in range(len(sample)))
-
-    def discreet_loss(self, predicted, label):
-        print((predicted, label))
-        return label - predicted
+    def discreet_loss(self, sample, label):
+        return label - self.predict(sample)
 
     def adaline_squared_loss(self, sample, label):
-        return self.discreet_loss(self.propagate_sample(sample), label) ** 2
+        return 2*(label - self._calculate_activation(sample))
 
     def validate(self, data):
         error = 0
         mispredicted = []
         print("Validation result on each sample:")
         for x, y in data:
-            sample_error = self.error(x, y)
+            sample_error = self.predict(x)
             error += sample_error
-            if sample_error != 0:
+            if sample_error != y:
                 mispredicted.append([x, sample_error, y])
         data_size = len(data)
-        accuracy = 100 - abs(len(mispredicted)) / data_size
+        mispredicted_size = len(mispredicted)
+        accuracy = 100 - abs(mispredicted_size) / data_size * 100
         print("Accuracy: {} on {} samples".format(accuracy, data_size))
-        print("Mispredicted examples: \n {}".format(mispredicted))
+        print("Mispredicted examples: {} \n {}".format(mispredicted_size, mispredicted))
         return accuracy
 
     def visualize_separating_function_on_samples(self):
@@ -177,7 +173,6 @@ class Perceptron:
         y0_plot = 0
         point_0 = (x0_plot, (-self.weights[0] * x0_plot - self.bias) / self.weights[1])
         point_1 = ((-self.weights[1] * y0_plot - self.bias) / self.weights[0], y0_plot)
-        print((point_0, point_1, self.bias))
         plt.plot(point_0, point_1, marker='o')
 
 
@@ -185,20 +180,18 @@ def main():
     CONFIG = configparser.ConfigParser()
     CONFIG.read(path.join(PROJECT_ROOT, 'configs', 'perceptron_config_OR.ini'))
     data = LogicData()
-    data.generate(500, offset=0.3, logical_fun='and', activation='bipolar')
-    perceptron = Perceptron(data.data, activation='bipolar')
+    activation = 'bipolar'
+    logical_fun = 'and'
+    loss = 'adaline'
+    data.generate(50, offset=0.1, logical_fun=logical_fun, activation=activation)
+    perceptron = Perceptron(data.data, activation=activation, loss=loss)
     perceptron.visualize_separating_function_on_samples()
-    perceptron.train(500, 0.01)
-    data.generate(500, offset=0.1, logical_fun='and', activation='bipolar')
+    epochs = 10
+    learning_rate = 0.01
+    learning_loss_threshold = 0.5
+    perceptron.train(epochs=epochs, learning_rate=learning_rate, learning_loss_threshold=learning_loss_threshold)
+    data.generate(50, offset=0.1, logical_fun=logical_fun, activation=activation)
     validating_data = data.data
-    test_sample = [-1, -1]
-    print(test_sample, (perceptron.predict(test_sample)))
-    test_sample = [-1, 1]
-    print(test_sample, (perceptron.predict(test_sample)))
-    test_sample = [1, -1]
-    print(test_sample, (perceptron.predict(test_sample)))
-    test_sample = [1, 1]
-    print(test_sample, (perceptron.predict(test_sample)))
     perceptron.validate(validating_data)
     perceptron.visualize_separating_function_on_samples()
 
