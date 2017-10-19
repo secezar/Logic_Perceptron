@@ -5,7 +5,6 @@ from datetime import datetime
 from os import path
 from random import random, shuffle, uniform
 
-import numpy
 from matplotlib import pyplot as plt
 
 from settings import PROJECT_ROOT
@@ -99,6 +98,7 @@ class Perceptron:
             print("Train inputs was not given fully. Used perceptron initial inputs.")
             inputs, labels = self.inputs, self.labels
         epoch = 0
+        epoch_losses = []
         epoch_loss = learning_loss_threshold + 1
         while epoch < epochs and abs(epoch_loss) > learning_loss_threshold:
             labeled_data = list(zip(inputs, labels))
@@ -107,8 +107,10 @@ class Perceptron:
             epoch_loss = 0
             for sample, label in labeled_data:
                 epoch_loss += self._optimize_weights(sample, label, learning_rate)
+            epoch_losses.append(epoch_loss)
             print("Epoch {} loss: {} \n\t Bias: {} | Weights: {}".format(epoch, epoch_loss, self.bias, self.weights))
             epoch += 1
+        return epoch_losses
 
     def _optimize_weights(self, sample, label, learning_rate):
         error = self.error(sample, label)
@@ -156,10 +158,18 @@ class Perceptron:
         print("Mispredicted examples: {} \n {}".format(mispredicted_size, mispredicted))
         return accuracy
 
-    def visualize_separating_function_on_samples(self):
+    def visualize_separating_function_on_samples(self, save_plot=True):
         self._plot_samples()
         self._plot_saparating_function()
+        if save_plot:
+            plt.savefig('separating')
         plt.show()
+
+    def visualize_learning_loss(self, losses, save_plot=True):
+        plt.plot(losses)
+        plt.show()
+        if save_plot:
+            plt.savefig('loss')
 
     def _plot_samples(self):
         xs = [elem[0] for elem in self.inputs]
@@ -178,22 +188,33 @@ class Perceptron:
 
 def main():
     CONFIG = configparser.ConfigParser()
-    CONFIG.read(path.join(PROJECT_ROOT, 'configs', 'perceptron_config_OR.ini'))
+    CONFIG.read(path.join(PROJECT_ROOT, 'configs', 'perceptron_config_AND_adaline_unipolar.ini'))
     data = LogicData()
-    activation = 'bipolar'
-    logical_fun = 'and'
-    loss = 'adaline'
-    data.generate(50, offset=0.1, logical_fun=logical_fun, activation=activation)
-    perceptron = Perceptron(data.data, activation=activation, loss=loss)
+    model_parameters = CONFIG['Model Parameters']
+    data_parameters = CONFIG['Data Parameters']
+    data.generate(int(data_parameters['training_data_size']),
+                  offset=(float(data_parameters['training_data_offset'])),
+                  logical_fun=(model_parameters['logical_fun']),
+                  activation=(model_parameters['activation']))
+
+    perceptron = Perceptron(data.data,
+                            activation=(model_parameters['activation']),
+                            loss=(model_parameters['loss_fun']),
+                            weights_range=(float(model_parameters['weights_min']),
+                                           float(model_parameters['weights_max'])))
+
     perceptron.visualize_separating_function_on_samples()
-    epochs = 10
-    learning_rate = 0.01
-    learning_loss_threshold = 0.5
-    perceptron.train(epochs=epochs, learning_rate=learning_rate, learning_loss_threshold=learning_loss_threshold)
-    data.generate(50, offset=0.1, logical_fun=logical_fun, activation=activation)
-    validating_data = data.data
-    perceptron.validate(validating_data)
+    epoch_losses = perceptron.train(epochs=(int(model_parameters['epochs'])),
+                                    learning_rate=(float(model_parameters['learning_rate'])),
+                                    learning_loss_threshold=(float(model_parameters['learning_loss_threshold'])))
     perceptron.visualize_separating_function_on_samples()
+    perceptron.visualize_learning_loss(epoch_losses)
+
+    data.generate(int(data_parameters['validation_data_size']),
+                  offset=(float(data_parameters['validation_data_offset'])),
+                  logical_fun=(model_parameters['logical_fun']),
+                  activation=(model_parameters['activation']))
+    perceptron.validate(data.data)
 
 if __name__ == "__main__":
     main()
